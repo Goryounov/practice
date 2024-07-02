@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aggregation Algorithm</title>
+    <link href="https://cdn.jsdelivr.net/npm/@mdi/font@4.x/css/materialdesignicons.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/vuetify@3.6.10/dist/vuetify.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vuetify@3.6.10/dist/vuetify.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
+    <style>
+        #tooltip {
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 5px;
+            border-radius: 5px;
+            display: none;
+        }
+
+        .page {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .date-range {
+            display: flex;
+            flex-direction: row;
+            gap: 20px;
+        }
+
+        .canvas, .ui {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border: 1px solid #1867c0;
+        }
+
+        .ui {
+            position: absolute;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 50%;
+            background-color: #fff;
+        }
+
+        thead {
+            background-color: #1867c0;
+            color: white;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+        }
+
+        th {
+            padding-top: 12px;
+            padding-bottom: 12px;
+            background-color: #1867c0;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+<div id="app" class="page">
+    <div class="date-range">
+        <v-date-picker
+            v-model="startDate"
+            :max="endDate"
+            label="Select range"
+            max-width="368"
+            color="primary"
+            title="Select the start date"
+        ></v-date-picker>
+        <v-date-picker
+            v-model="endDate"
+            :min="startDate"
+            label="Select range"
+            max-width="368"
+            color="primary"
+            title="Select the end date"
+        ></v-date-picker>
+    </div>
+
+    <table class="mb-3">
+        <thead>
+        <tr>
+            <th></th>
+            <th>С агрегацией</th>
+            <th>Без агрегации</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr>
+            <td>Число точек</td>
+            <td>{{ totalRecords || '-' }}</td>
+            <td>{{ rawTotalRecords || '-' }}</td>
+        </tr>
+        <tr>
+            <td>Время запроса к базе, c</td>
+            <td>{{ queryTime || '-' }}</td>
+            <td>{{ rawQueryTime || '-' }}</td>
+        </tr>
+        </tbody>
+    </table>
+
+    <v-btn
+        :loading="rawLoading"
+        color="primary"
+        class="mb-3"
+        @click="fetchRawCoordinates">
+        Получить параметры без агрегации
+    </v-btn>
+
+    <div class="canvas" style="position: relative">
+        <v-progress-circular
+            v-if="isLoading"
+            size="100"
+            color="primary"
+            bg-color="#E0E0E0"
+            style="position: absolute"
+            indeterminate>
+        </v-progress-circular>
+        <canvas ref="canvas" id="myCanvas" width="800" height="600" class="canvas"></canvas>
+        <canvas ref="ui" id="ui" width="800" height="600" class="ui"></canvas>
+        <div id="tooltip" ref="tooltip"></div>
+    </div>
+</div>
+
+<script>
+  const { ref, onMounted } = Vue
+  const { debounce } = _
+
+  const app = Vue.createApp({
+    data() {
+      return {
+        rawLoading: false,
+        rawTotalRecords: null,
+        rawQueryTime: null
+      }
+    },
+
+    watch: {
+      startDate(newValue) {
+        this.onDateUpdate(this.startDate, this.endDate)
+        return newValue
+      },
+
+      endDate(newValue) {
+        this.onDateUpdate(this.startDate, this.endDate)
+        return newValue
+      }
+    },
+
+    setup() {
+      const canvas = ref(null)
+      const tooltip = ref(null)
+      let isLoading = ref(false)
+      let startDate = ref(new Date(moment('2024-01-01')))
+      let endDate = ref(new Date(moment('2024-12-31')))
+      let coordinates = ref(null)
+      let totalRecords = ref(null)
+      let queryTime = ref(null)
+      let bounds = ref({
+        x_min: 4.2,
+        x_max: 28,
+        y_min: 8.3,
+        y_max: 340
+      })
+
+      function drawCanvas(mouseX = null, mouseY = null) {
+        const context = canvas.value.getContext('2d')
+        context.clearRect(0, 0, canvas.value.width, canvas.value.height)
+
+        const width = canvas.value.width
+        const height = canvas.value.height
+
+        const stepSize = 20
+        context.strokeStyle = '#e0e0e0'
+        context.lineWidth = 1
+
+        for (let x = stepSize; x < width; x += stepSize) {
+          context.beginPath()
+          context.moveTo(x, 0)
+          context.lineTo(x, height)
+          context.stroke()
+        }
+
+        for (let y = stepSize; y < height; y += stepSize) {
+          context.beginPath()
+          context.moveTo(0, y)
+          context.lineTo(width, y)
+          context.stroke()
+        }
+
+        context.fillStyle = 'black'
+        context.font = '14px Arial'
+
+        context.fillText(`x_min: ${bounds.value.x_min}`, 10, height - 10)
+        context.fillText(`x_max: ${bounds.value.x_max}`, width - 60, height - 10)
+        context.fillText(`y_min: ${bounds.value.y_min}`, 10, height - 30)
+        context.fillText(`y_max: ${bounds.value.y_max}`, 10, 20)
+
+        const xStepCount = 5
+        const xStepValue = (bounds.value.x_max - bounds.value.x_min) / xStepCount
+        const xStepPixel = width / xStepCount
+
+        for (let i = 1; i < xStepCount; i++) {
+          const xValue = bounds.value.x_min + i * xStepValue
+          const xPixel = i * xStepPixel
+          context.fillText(xValue.toFixed(2), xPixel - 15, height - 10)
+        }
+
+        const yStepCount = 5
+        const yStepValue = (bounds.value.y_max - bounds.value.y_min) / yStepCount
+        const yStepPixel = height / yStepCount
+
+        for (let i = 1; i < yStepCount; i++) {
+          const yValue = bounds.value.y_min + i * yStepValue
+          const yPixel = height - i * yStepPixel
+          context.fillText(yValue.toFixed(2), 10, yPixel + 5)
+        }
+
+        context.fillStyle = '#1867c0'
+        coordinates.forEach(point => {
+          const x_value = point.x
+          const y_value = point.y
+          const x = point.pixel_x
+          const y = -point.pixel_y + 600
+          context.beginPath()
+          context.arc(x, y, 1, 0, Math.PI * 2, true)
+          context.fill()
+
+          if (mouseX !== null && mouseY !== null) {
+            const dx = mouseX - x
+            const dy = mouseY - y
+            const distance = Math.sqrt(dx * dx + dy * dy)
+            if (distance < 5) {
+              tooltip.value.style.left = `${x + 10}px`
+              tooltip.value.style.top = `${y + 10}px`
+              tooltip.value.innerHTML = `(${x_value}, ${y_value})`
+              tooltip.value.style.display = 'block'
+            }
+          }
+        })
+      }
+
+      async function fetchCoordinates(startTimestamp, endTimestamp) {
+        try {
+          isLoading.value = true
+          startTimestamp = moment(startTimestamp).unix()
+          endTimestamp = moment(endTimestamp).unix()
+
+          const response = await axios.post(
+            `http://localhost:8000/diagram-aggregate?from_time=${startTimestamp}&to_time=${endTimestamp}&canvas_width=800&canvas_height=600`
+          )
+          coordinates = response.data.records
+          totalRecords.value = coordinates.length
+          queryTime.value = response.data.query_execution_time
+          bounds.value.x_min = response.data.bounds.min_x
+          bounds.value.x_max = response.data.bounds.max_x
+          bounds.value.y_min = response.data.bounds.min_y
+          bounds.value.y_max = response.data.bounds.max_y
+          drawCanvas()
+        } catch (err) {
+          console.log(err)
+        } finally {
+          isLoading.value = false
+        }
+      }
+
+      onMounted(() => {
+        document.getElementById('ui').addEventListener('mousemove', function (event) {
+          const canvas = event.target
+          const rect = canvas.getBoundingClientRect()
+          const mouseX = event.clientX - rect.left
+          const mouseY = event.clientY - rect.top
+
+          const width = canvas.width
+          const height = canvas.height
+
+          tooltip.value.style.display = 'none'
+
+          if (mouseX !== null && mouseY !== null) {
+            const context = canvas.getContext('2d')
+            context.clearRect(0, 0, width, height)
+            context.strokeStyle = 'red'
+            context.beginPath()
+            context.moveTo(mouseX, 0)
+            context.lineTo(mouseX, height)
+            context.moveTo(0, mouseY)
+            context.lineTo(width, mouseY)
+
+
+            if (Array.isArray(coordinates))
+              coordinates.forEach(point => {
+                const x_value = point.x
+                const y_value = point.y
+                const x = point.pixel_x
+                const y = -point.pixel_y + 600
+
+                const dx = mouseX - x
+                const dy = mouseY - y
+                const distance = Math.sqrt(dx * dx + dy * dy)
+                if (distance < 5) {
+                  tooltip.value.style.left = `${x + 10}px`
+                  tooltip.value.style.top = `${y + 10}px`
+                  tooltip.value.innerHTML = `(${x_value}, ${y_value})`
+                  tooltip.value.style.display = 'block'
+                }
+              })
+
+            context.stroke()
+          }
+        })
+      })
+
+      return {
+        coordinates,
+        canvas,
+        tooltip,
+        startDate,
+        endDate,
+        isLoading,
+        queryTime,
+        totalRecords,
+        fetchCoordinates
+      }
+    },
+
+    methods: {
+      onDateUpdate: debounce(async function (startTime, endTime) {
+        await this.fetchCoordinates(startTime, endTime)
+      }, 300),
+
+      async fetchRawCoordinates() {
+        try {
+          this.rawLoading = true
+
+          const response = await axios.get(`http://localhost:8000/diagram?from_time=${moment(this.startDate).unix()}&to_time=${moment(this.endDate).unix()}`)
+          this.rawTotalRecords = response.data.records.length
+          this.rawQueryTime = response.data.query_execution_time
+        } catch (err) {
+          console.log(err)
+        } finally {
+          this.rawLoading = false
+        }
+      }
+    }
+  })
+
+  const { createVuetify } = Vuetify
+  const vuetify = createVuetify()
+  app.use(vuetify).mount('#app')
+</script>
+</body>
+</html>
