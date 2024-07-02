@@ -90,7 +90,13 @@ async def diagram_aggregate(from_time, to_time, canvas_width, canvas_height):
 
 @app.get('/diagram')
 async def diagram(from_time, to_time):
-    conn = await asyncpg.connect(**pg_settings)
+    conn = await asyncpg.connect(
+        user=pg_settings['user'],
+        password=pg_settings['password'],
+        database=pg_settings['database'],
+        host=pg_settings['host'],
+        port=pg_settings['port']
+    )
 
     from_time = int(from_time)
     to_time = int(to_time)

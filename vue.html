@@ -2,6 +2,7 @@
 <html>
 <head>
     <title>Aggregation Algorithm</title>
+    <meta charset="UTF-8">
     <link href="https://cdn.jsdelivr.net/npm/@mdi/font@4.x/css/materialdesignicons.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/vuetify@3.6.10/dist/vuetify.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
@@ -258,8 +259,8 @@
           startTimestamp = moment(startTimestamp).unix()
           endTimestamp = moment(endTimestamp).unix()
 
-          const response = await axios.post(
-            `http://localhost:8000/diagram-aggregate?from_time=${startTimestamp}&to_time=${endTimestamp}&canvas_width=800&canvas_height=600`
+          const response = await axios.get(
+            `http://localhost:8000/diagram/aggregate?from_time=${startTimestamp}&to_time=${endTimestamp}&canvas_width=800&canvas_height=600`
           )
           coordinates = response.data.records
           totalRecords.value = coordinates.length
