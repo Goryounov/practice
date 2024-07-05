@@ -1,7 +1,7 @@
 import asyncpg
 import numpy as np
-from datetime import datetime
 import asyncio
+from datetime import datetime
 
 pg_settings = {
     'user': 'test',

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import time
 import asyncpg
+import time
 
 pg_settings = {
     'user': 'test',
@@ -53,6 +53,10 @@ async def diagram_aggregate(from_time, to_time, canvas_width, canvas_height):
     """
     
     bounds = await conn.fetchrow(min_max_query)
+    for i in range (0, 4):
+        if (bounds[i] == None):
+            return {'error': 'Exceeding the time frame'}
+
     max_x = bounds['max_x']
     min_x = bounds['min_x']
     max_y = bounds['max_y']
